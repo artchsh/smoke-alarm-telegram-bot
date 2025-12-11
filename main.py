@@ -37,17 +37,17 @@ async def get_weather_text():
                 
                 temp_c = current.get("temp_c")
                 feelslike_c = current.get("feelslike_c")
-                condition = current.get("condition", {}).get("text")
-                wind_kph = current.get("wind_kph")
+                # condition = current.get("condition", {}).get("text")
+                # wind_kph = current.get("wind_kph")
                 
                 # Determine emoji based on temp
                 temp_emoji = "❄️" if temp_c < 0 else "☀️" if temp_c > 20 else "⛅"
                 
                 return (
-                    f"\n\n🌡 **Погода в {location.get('name', 'Алматы')}:**\n"
-                    f"{temp_emoji} Температура: **{temp_c}°C** (ощущается как {feelslike_c}°C)\n"
-                    f"☁️ Небо: {condition}\n"
-                    f"💨 Ветер: {wind_kph} км/ч"
+                    # f"\n\n🌡 <strong>Погода в {location.get('name', 'Алматы')}:</strong>\n"
+                    f"{temp_emoji} Температура: <strong>{temp_c}°C<strong> (ощущается как {feelslike_c}°C)\n"
+                    # f"☁️ Небо: {condition}\n"
+                    # f"💨 Ветер: {wind_kph} км/ч"
                 )
     except Exception as e:
         logging.error(f"Error fetching weather: {e}")
