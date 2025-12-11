@@ -33,7 +33,7 @@ async def get_weather_text():
             if response.status_code == 200:
                 data = response.json()
                 current = data.get("current", {})
-                location = data.get("location", {})
+                # location = data.get("location", {})
                 
                 temp_c = current.get("temp_c")
                 feelslike_c = current.get("feelslike_c")
@@ -44,9 +44,8 @@ async def get_weather_text():
                 temp_emoji = "❄️" if temp_c < 0 else "☀️" if temp_c > 20 else "⛅"
                 
                 return (
-                    # f"\n\n🌡 <strong>Погода в {location.get('name', 'Алматы')}:</strong>\n"
-                    f"\n\n🌡 <strong>Погода:</strong>\n"
-                    f"{temp_emoji} Температура: <strong>{temp_c}°C<strong> (ощущается как {feelslike_c}°C)\n"
+                    f"\n\n🌡 <b>Погода:</b>\n"
+                    f"{temp_emoji} Температура: <b>{temp_c}°C</b> (ощущается как {feelslike_c}°C)\n"
                     # f"☁️ Небо: {condition}\n"
                     # f"💨 Ветер: {wind_kph} км/ч"
                 )
@@ -136,7 +135,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_text = query.message.text_html
     
     # Markers
-    weather_marker = "\n\n🌡 <strong>Погода:</strong>"
+    weather_marker = "\n\n🌡 <b>Погода:</b>"
     header = "\n\n😎 <b>Крутышки, которые идут курить:</b>"
     
     # 1. Separate Weather
@@ -182,9 +181,9 @@ async def smoke_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today, week = database.get_smoke_stats(chat_id)
     
     text = (
-        f"📊 **Стата по перекурам:**\n\n"
-        f"🔥 Сегодня: **{today}** раз(а)\n"
-        f"📅 За неделю: **{week}** раз(а)\n\n"
+        f"📊 <b>Стата по перекурам:</b>\n\n"
+        f"🔥 Сегодня: <b>{today}</b> раз(а)\n"
+        f"📅 За неделю: <b>{week}</b> раз(а)\n\n"
         f"Легкие в шоке! 💀"
     )
     await update.message.reply_markdown(text)
