@@ -54,7 +54,7 @@ async def get_weather_text():
     return ""
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    await update.message.reply_html(
         "Йо! Это Чилл-Зона Бот. 🚬\n"
         "Я чекаю всех, кто пишет в чат, и добавляю в сквад.\n"
         "Юзай /smoke, чтобы созвать всех на перекур!\n"
@@ -129,6 +129,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user = query.from_user
+    chat_id = query.message.chat_id
+    message_id = query.message.message_id
+    
+    # Toggle participation in DB
+    database.toggle_smoke_participation(user.id, chat_id, message_id)
+
     # Use mention_html() to get a clickable link or formatted name
     user_line = f"- {user.mention_html()}"
     
@@ -179,14 +185,25 @@ async def smoke_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await capture_user(update, context)
     
     today, week = database.get_smoke_stats(chat_id)
+    today_leaders, week_leaders = database.get_smoke_leaderboard(chat_id)
     
+    def format_leaders(leaders):
+        if not leaders:
+            return "Пока никто..."
+        return "\n".join([f"{i+1}. {name}: <b>{count}</b>" for i, (name, count) in enumerate(leaders)])
+
     text = (
         f"📊 <b>Стата по перекурам:</b>\n\n"
-        f"🔥 Сегодня: <b>{today}</b> раз(а)\n"
-        f"📅 За неделю: <b>{week}</b> раз(а)\n\n"
+        f"🔥 <b>Общие вызовы:</b>\n"
+        f"Сегодня: <b>{today}</b> раз(а)\n"
+        f"За неделю: <b>{week}</b> раз(а)\n\n"
+        f"🏆 <b>Топ курильщиков (сегодня):</b>\n"
+        f"{format_leaders(today_leaders)}\n\n"
+        f"👑 <b>Топ курильщиков (неделя):</b>\n"
+        f"{format_leaders(week_leaders)}\n\n"
         f"Легкие в шоке! 💀"
     )
-    await update.message.reply_markdown(text)
+    await update.message.reply_html(text)
 
 async def smoke_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -196,7 +213,7 @@ async def smoke_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await capture_user(update, context)
     
     database.set_user_active(user.id, chat_id, False)
-    await update.message.reply_text(f"Ок, {user.first_name}, не душни, убрал тебя. 🫡")
+    await update.message.reply_html(f"Ок, {user.first_name}, не душни, убрал тебя. 🫡")
 
 async def smoke_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -206,7 +223,7 @@ async def smoke_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await capture_user(update, context)
     
     database.set_user_active(user.id, chat_id, True)
-    await update.message.reply_text(f"Опа, {user.first_name} снова с нами! Велкам бэк. 😎")
+    await update.message.reply_html(f"Опа, {user.first_name} снова с нами! Велкам бэк. 😎")
 
 def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN")

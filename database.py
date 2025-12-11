@@ -28,6 +28,15 @@ def init_db(db_path=None):
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS smoke_participation (
+            user_id INTEGER,
+            chat_id INTEGER,
+            message_id INTEGER,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, chat_id, message_id)
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -39,6 +48,69 @@ def log_smoke_event(chat_id, user_id, db_path=None):
     cursor.execute("INSERT INTO smoke_events (chat_id, user_id) VALUES (?, ?)", (chat_id, user_id))
     conn.commit()
     conn.close()
+
+def toggle_smoke_participation(user_id, chat_id, message_id, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Check if exists
+    cursor.execute(
+        "SELECT 1 FROM smoke_participation WHERE user_id = ? AND chat_id = ? AND message_id = ?",
+        (user_id, chat_id, message_id)
+    )
+    exists = cursor.fetchone()
+    
+    if exists:
+        cursor.execute(
+            "DELETE FROM smoke_participation WHERE user_id = ? AND chat_id = ? AND message_id = ?",
+            (user_id, chat_id, message_id)
+        )
+        joined = False
+    else:
+        cursor.execute(
+            "INSERT INTO smoke_participation (user_id, chat_id, message_id) VALUES (?, ?, ?)",
+            (user_id, chat_id, message_id)
+        )
+        joined = True
+        
+    conn.commit()
+    conn.close()
+    return joined
+
+def get_smoke_leaderboard(chat_id, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Today
+    cursor.execute("""
+        SELECT p.mention_name, count(*) as count 
+        FROM smoke_participation sp
+        JOIN participants p ON sp.user_id = p.user_id AND sp.chat_id = p.chat_id
+        WHERE sp.chat_id = ? AND date(sp.timestamp) = date('now')
+        GROUP BY sp.user_id
+        ORDER BY count DESC
+        LIMIT 5
+    """, (chat_id,))
+    today_stats = cursor.fetchall()
+    
+    # Week
+    cursor.execute("""
+        SELECT p.mention_name, count(*) as count 
+        FROM smoke_participation sp
+        JOIN participants p ON sp.user_id = p.user_id AND sp.chat_id = p.chat_id
+        WHERE sp.chat_id = ? AND sp.timestamp >= datetime('now', '-7 days')
+        GROUP BY sp.user_id
+        ORDER BY count DESC
+        LIMIT 5
+    """, (chat_id,))
+    week_stats = cursor.fetchall()
+    
+    conn.close()
+    return today_stats, week_stats
 
 def get_smoke_stats(chat_id, db_path=None):
     if db_path is None:
