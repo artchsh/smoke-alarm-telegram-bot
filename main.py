@@ -2,8 +2,8 @@ import logging
 import os
 import random
 import httpx
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 import database
 
 logging.basicConfig(
@@ -45,6 +45,7 @@ async def get_weather_text():
                 
                 return (
                     # f"\n\n🌡 <strong>Погода в {location.get('name', 'Алматы')}:</strong>\n"
+                    f"\n\n🌡 <strong>Погода:</strong>\n"
                     f"{temp_emoji} Температура: <strong>{temp_c}°C<strong> (ощущается как {feelslike_c}°C)\n"
                     # f"☁️ Небо: {condition}\n"
                     # f"💨 Ветер: {wind_kph} км/ч"
@@ -116,7 +117,63 @@ async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = message_template.format(mentions=mentions_str) + weather_text
     
-    await update.message.reply_html(text)
+    keyboard = [[InlineKeyboardButton("Я иду! 🚬", callback_data="join_smoke")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_html(text, reply_markup=reply_markup)
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data != "join_smoke":
+        return
+
+    user = query.from_user
+    # Use mention_html() to get a clickable link or formatted name
+    user_line = f"- {user.mention_html()}"
+    
+    current_text = query.message.text_html
+    
+    # Markers
+    weather_marker = "\n\n🌡 <strong>Погода:</strong>"
+    header = "\n\n😎 <b>Крутышки, которые идут курить:</b>"
+    
+    # 1. Separate Weather
+    if weather_marker in current_text:
+        parts = current_text.split(weather_marker)
+        main_part = parts[0]
+        weather_part = weather_marker + parts[1]
+    else:
+        main_part = current_text
+        weather_part = ""
+        
+    # 2. Handle List
+    if header in main_part:
+        subparts = main_part.split(header)
+        intro = subparts[0]
+        list_content = subparts[1]
+        
+        # Split into lines, filter empty
+        lines = [line.strip() for line in list_content.split('\n') if line.strip()]
+        
+        if user_line in lines:
+            lines.remove(user_line) # Toggle off
+        else:
+            lines.append(user_line) # Toggle on
+            
+        if not lines:
+            new_main = intro # Remove section if empty
+        else:
+            new_main = intro + header + "\n" + "\n".join(lines)
+    else:
+        # Create section
+        new_main = main_part + header + "\n" + user_line
+
+    new_text = new_main + weather_part
+    
+    if new_text != current_text:
+        await query.edit_message_text(new_text, parse_mode='HTML', reply_markup=query.message.reply_markup)
 
 async def smoke_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -170,6 +227,7 @@ def main():
     application.add_handler(CommandHandler("smoke_stats", smoke_stats))
     application.add_handler(CommandHandler("smoke_leave", smoke_leave))
     application.add_handler(CommandHandler("smoke_join", smoke_join))
+    application.add_handler(CallbackQueryHandler(button_handler))
 
     # Capture all messages to register users
     # We use a separate group so it doesn't stop other handlers
