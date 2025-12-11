@@ -1,9 +1,14 @@
 import sqlite3
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
-def init_db(db_path="smoke_bot.db"):
+DB_PATH = os.getenv("DB_PATH", "smoke_bot.db")
+
+def init_db(db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("""
@@ -26,14 +31,18 @@ def init_db(db_path="smoke_bot.db"):
     conn.commit()
     conn.close()
 
-def log_smoke_event(chat_id, user_id, db_path="smoke_bot.db"):
+def log_smoke_event(chat_id, user_id, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("INSERT INTO smoke_events (chat_id, user_id) VALUES (?, ?)", (chat_id, user_id))
     conn.commit()
     conn.close()
 
-def get_smoke_stats(chat_id, db_path="smoke_bot.db"):
+def get_smoke_stats(chat_id, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -57,7 +66,9 @@ def get_smoke_stats(chat_id, db_path="smoke_bot.db"):
     conn.close()
     return today_count, week_count
 
-def add_or_update_user(user_id, chat_id, mention_name, db_path="smoke_bot.db"):
+def add_or_update_user(user_id, chat_id, mention_name, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     try:
@@ -84,7 +95,9 @@ def add_or_update_user(user_id, chat_id, mention_name, db_path="smoke_bot.db"):
         conn.commit()
         conn.close()
 
-def set_user_active(user_id, chat_id, is_active, db_path="smoke_bot.db"):
+def set_user_active(user_id, chat_id, is_active, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute(
@@ -101,7 +114,9 @@ def set_user_active(user_id, chat_id, is_active, db_path="smoke_bot.db"):
     conn.commit()
     conn.close()
 
-def get_active_users(chat_id, db_path="smoke_bot.db"):
+def get_active_users(chat_id, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("SELECT user_id, mention_name FROM participants WHERE chat_id = ? AND is_active = 1", (chat_id,))

@@ -1,0 +1,11 @@
+services:
+  bot:
+    build: .
+    container_name: smoke-bot
+    restart: unless-stopped
+    environment:
+      - DB_PATH=/data/smoke_bot.db
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
