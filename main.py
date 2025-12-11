@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+import httpx
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 import database
@@ -9,6 +10,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+
+WEATHER_API_URL = "http://api.weatherapi.com/v1/current.json?key=3d10f31522e649a9803151553240411&q=Almaty&aqi=no"
 
 SMOKE_MESSAGES = [
     "🚬 ГО КУРИТЬ! 🚬\n{mentions}\n\nНу че, народ, погнали дымить? 😮‍💨",
@@ -22,6 +25,33 @@ SMOKE_MESSAGES = [
     "🚬 5 МИНУТ ТИШИНЫ 🚬\n{mentions}\n\nИли не тишины, а сплетен у курилки. Го! 🗣️",
     "🚬 ВНИМАНИЕ, СПАСИБО ЗА ВНИМАНИЕ 🚬\n{mentions}\n\nОбъявляется всеобщая мобилизация в курилку. Форма одежды - парадная (с сигаретой). 🫡"
 ]
+
+async def get_weather_text():
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(WEATHER_API_URL)
+            if response.status_code == 200:
+                data = response.json()
+                current = data.get("current", {})
+                location = data.get("location", {})
+                
+                temp_c = current.get("temp_c")
+                feelslike_c = current.get("feelslike_c")
+                condition = current.get("condition", {}).get("text")
+                wind_kph = current.get("wind_kph")
+                
+                # Determine emoji based on temp
+                temp_emoji = "❄️" if temp_c < 0 else "☀️" if temp_c > 20 else "⛅"
+                
+                return (
+                    f"\n\n🌡 **Погода в {location.get('name', 'Алматы')}:**\n"
+                    f"{temp_emoji} Температура: **{temp_c}°C** (ощущается как {feelslike_c}°C)\n"
+                    f"☁️ Небо: {condition}\n"
+                    f"💨 Ветер: {wind_kph} км/ч"
+                )
+    except Exception as e:
+        logging.error(f"Error fetching weather: {e}")
+    return ""
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -81,7 +111,10 @@ async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     mentions_str = " ".join(mentions)
     message_template = random.choice(SMOKE_MESSAGES)
-    text = message_template.format(mentions=mentions_str)
+    
+    weather_text = await get_weather_text()
+    
+    text = message_template.format(mentions=mentions_str) + weather_text
     
     await update.message.reply_html(text)
 
