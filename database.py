@@ -3,6 +3,10 @@ import logging
 import os
 
 logger = logging.getLogger(__name__)
+file_handler = logging.FileHandler('bot.log')
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
+logger.setLevel(logging.INFO)
 
 DB_PATH = os.getenv("DB_PATH", "smoke_bot.db")
 
@@ -11,13 +15,50 @@ def init_db(db_path=None):
         db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS db_version (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    
+    cursor.execute("SELECT value FROM db_version WHERE key = 'schema_version'")
+    version = cursor.fetchone()
+    
+    if version is None:
+        cursor.execute("INSERT INTO db_version (key, value) VALUES ('schema_version', '1')")
+        version = '1'
+    
+    if version[0] == '1':
+        try:
+            cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='participants'")
+            table_sql = cursor.fetchone()[0]
+            if 'PRIMARY KEY (user_id, chat_id)' in table_sql or ('user_id, chat_id' in table_sql and 'PRIMARY KEY' in table_sql):
+                logger.info("Detected old schema (user_id, chat_id) PK, migrating to new schema (user_id) PK...")
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS participants_new (
+                        user_id INTEGER PRIMARY KEY,
+                        mention_name TEXT,
+                        is_active BOOLEAN DEFAULT 1
+                    )
+                """)
+                cursor.execute("""
+                    INSERT OR IGNORE INTO participants_new (user_id, mention_name, is_active)
+                    SELECT user_id, mention_name, is_active FROM participants
+                """)
+                cursor.execute("DROP TABLE IF EXISTS participants")
+                cursor.execute("ALTER TABLE participants_new RENAME TO participants")
+                cursor.execute("UPDATE db_version SET value = '2' WHERE key = 'schema_version'")
+                logger.info("Migration to new schema completed successfully")
+        except Exception as e:
+            logger.error(f"Migration error: {e}")
+    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS participants (
-            user_id INTEGER,
-            chat_id INTEGER,
+            user_id INTEGER PRIMARY KEY,
             mention_name TEXT,
-            is_active BOOLEAN DEFAULT 1,
-            PRIMARY KEY (user_id, chat_id)
+            is_active BOOLEAN DEFAULT 1
         )
     """)
     cursor.execute("""
@@ -89,7 +130,7 @@ def get_smoke_leaderboard(chat_id, db_path=None):
     cursor.execute("""
         SELECT p.mention_name, count(*) as count 
         FROM smoke_participation sp
-        JOIN participants p ON sp.user_id = p.user_id AND sp.chat_id = p.chat_id
+        JOIN participants p ON sp.user_id = p.user_id
         WHERE sp.chat_id = ? AND date(sp.timestamp) = date('now')
         GROUP BY sp.user_id
         ORDER BY count DESC
@@ -101,7 +142,7 @@ def get_smoke_leaderboard(chat_id, db_path=None):
     cursor.execute("""
         SELECT p.mention_name, count(*) as count 
         FROM smoke_participation sp
-        JOIN participants p ON sp.user_id = p.user_id AND sp.chat_id = p.chat_id
+        JOIN participants p ON sp.user_id = p.user_id
         WHERE sp.chat_id = ? AND sp.timestamp >= datetime('now', '-7 days')
         GROUP BY sp.user_id
         ORDER BY count DESC
@@ -138,28 +179,25 @@ def get_smoke_stats(chat_id, db_path=None):
     conn.close()
     return today_count, week_count
 
-def add_or_update_user(user_id, chat_id, mention_name, db_path=None):
+def add_or_update_user(user_id, mention_name, db_path=None):
     if db_path is None:
         db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     try:
-        # Check if user exists
-        cursor.execute("SELECT is_active FROM participants WHERE user_id = ? AND chat_id = ?", (user_id, chat_id))
+        cursor.execute("SELECT is_active FROM participants WHERE user_id = ?", (user_id,))
         result = cursor.fetchone()
         
         if result is None:
-            # New user, default active
             cursor.execute(
-                "INSERT INTO participants (user_id, chat_id, mention_name, is_active) VALUES (?, ?, ?, 1)",
-                (user_id, chat_id, mention_name)
+                "INSERT INTO participants (user_id, mention_name, is_active) VALUES (?, ?, 1)",
+                (user_id, mention_name)
             )
-            logger.info(f"Added new user {mention_name} ({user_id}) in chat {chat_id}")
+            logger.info(f"Added new user {mention_name} ({user_id})")
         else:
-            # Update mention name just in case, but don't change is_active status
             cursor.execute(
-                "UPDATE participants SET mention_name = ? WHERE user_id = ? AND chat_id = ?",
-                (mention_name, user_id, chat_id)
+                "UPDATE participants SET mention_name = ? WHERE user_id = ?",
+                (mention_name, user_id)
             )
     except Exception as e:
         logger.error(f"Error adding/updating user: {e}")
@@ -167,31 +205,104 @@ def add_or_update_user(user_id, chat_id, mention_name, db_path=None):
         conn.commit()
         conn.close()
 
-def set_user_active(user_id, chat_id, is_active, db_path=None):
+def set_user_active(user_id, is_active, db_path=None):
     if db_path is None:
         db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE participants SET is_active = ? WHERE user_id = ? AND chat_id = ?",
-        (1 if is_active else 0, user_id, chat_id)
+        "UPDATE participants SET is_active = ? WHERE user_id = ?",
+        (1 if is_active else 0, user_id)
     )
-    if cursor.rowcount == 0:
-        # If user tried to leave/join but wasn't in DB yet (e.g. never spoke), insert them
-        # If leaving, insert as inactive. If joining, insert as active.
-        # We need a mention name though. This function might need to be called with mention_name if we want to support this edge case perfectly.
-        # For now, we assume the user has interacted or we ignore. 
-        # Actually, if they run a command, they are interacting. We should probably capture them in the command handler first.
-        pass
     conn.commit()
     conn.close()
 
-def get_active_users(chat_id, db_path=None):
+def is_user_active(user_id, db_path=None):
     if db_path is None:
         db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT user_id, mention_name FROM participants WHERE chat_id = ? AND is_active = 1", (chat_id,))
+    cursor.execute("SELECT is_active FROM participants WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] == 1 if result else False
+
+def get_active_users(db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, mention_name FROM participants WHERE is_active = 1")
     users = cursor.fetchall()
     conn.close()
     return users
+
+def get_monthly_stats(chat_id, db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT count(*) FROM smoke_events 
+        WHERE chat_id = ? AND timestamp >= datetime('now', '-30 days')
+    """, (chat_id,))
+    month_count = cursor.fetchone()[0]
+    
+    cursor.execute("""
+        SELECT p.mention_name, count(*) as count 
+        FROM smoke_events se
+        JOIN participants p ON se.user_id = p.user_id
+        WHERE se.chat_id = ? AND se.timestamp >= datetime('now', '-30 days')
+        GROUP BY se.user_id
+        ORDER BY count DESC
+        LIMIT 1
+    """, (chat_id,))
+    top_smoker = cursor.fetchone()
+    
+    cursor.execute("""
+        SELECT p.mention_name, count(*) as count 
+        FROM smoke_participation sp
+        JOIN participants p ON sp.user_id = p.user_id
+        WHERE sp.chat_id = ? AND sp.timestamp >= datetime('now', '-30 days')
+        GROUP BY sp.user_id
+        ORDER BY count DESC
+        LIMIT 5
+    """, (chat_id,))
+    month_leaders = cursor.fetchall()
+    
+    conn.close()
+    return month_count, top_smoker, month_leaders
+
+def get_smoke_history(chat_id, period='week', db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    period_map = {
+        'today': "date(timestamp) = date('now')",
+        'week': "timestamp >= datetime('now', '-7 days')",
+        'month': "timestamp >= datetime('now', '-30 days')",
+        'all': "1=1"
+    }
+    
+    condition = period_map.get(period, period_map['week'])
+    
+    cursor.execute(f"""
+        SELECT se.timestamp, p.mention_name 
+        FROM smoke_events se
+        JOIN participants p ON se.user_id = p.user_id
+        WHERE se.chat_id = ? AND {condition}
+        ORDER BY se.timestamp DESC
+        LIMIT 50
+    """, (chat_id,))
+    events = cursor.fetchall()
+    
+    conn.close()
+    return events
+
+def get_db_connection(db_path=None):
+    if db_path is None:
+        db_path = DB_PATH
+    return sqlite3.connect(db_path)
