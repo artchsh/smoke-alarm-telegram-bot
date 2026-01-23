@@ -165,7 +165,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Я чекаю всех, кто пишет в чат, и добавляю в сквад.\n"
         "Юзай /smoke, чтобы созвать всех на перекур!\n"
         "Юзай /smoke_stats, чтобы чекнуть статистику.\n"
-        "Юзай /smoke_history, чтобы посмотреть историю перекуров.\n"
+        "Юзай /leaderboard, чтобы глянуть топ курильщиков.\n"
         "Юзай /weather_info, чтобы узнать погоду.\n"
         "Юзай /weather_subscribe, чтобы получать погоду каждый день в 9:00.\n"
         "Юзай /smoke_leave, если хочешь ливнуть из рассылки.\n"
@@ -421,69 +421,67 @@ async def weather_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_action("WEATHER_SUBSCRIBE", f"User {user.id} subscribed to daily weather in chat {chat_id}")
         await update.message.reply_html("✅ Ежедневная погода включена! Каждый будний день в 9:00 утра я буду присылать сводку. ☀️")
 
-async def smoke_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
-    log_action("HISTORY_COMMAND", f"User {user.id} ({user.first_name}) requested history in chat {chat_id}")
+    log_action("LEADERBOARD_COMMAND", f"User {user.id} ({user.first_name}) requested leaderboard in chat {chat_id}")
     await capture_user(update, context)
-    
+
     keyboard = [
-        [InlineKeyboardButton("Сегодня", callback_data="history_today"),
-         InlineKeyboardButton("Неделя", callback_data="history_week")],
-        [InlineKeyboardButton("Месяц", callback_data="history_month"),
-         InlineKeyboardButton("Всё время", callback_data="history_all")]
+        [InlineKeyboardButton("Сегодня", callback_data="leaderboard_today"),
+         InlineKeyboardButton("Неделя", callback_data="leaderboard_week")],
+        [InlineKeyboardButton("Месяц", callback_data="leaderboard_month"),
+         InlineKeyboardButton("Всё время", callback_data="leaderboard_all")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await update.message.reply_html(
-        "📜 <b>История перекуров:</b>\n\n"
+        "🏆 <b>Топ курильщиков:</b>\n\n"
         "Выбери период:",
         reply_markup=reply_markup
     )
 
-async def history_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def leaderboard_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
+
     user = query.from_user
     chat_id = query.message.chat_id
-    
+
     period_map = {
-        "history_today": ("Сегодня", "today"),
-        "history_week": ("Неделя", "week"),
-        "history_month": ("Месяц", "month"),
-        "history_all": ("Всё время", "all")
+        "leaderboard_today": ("Сегодня", "today"),
+        "leaderboard_week": ("Неделя", "week"),
+        "leaderboard_month": ("Месяц", "month"),
+        "leaderboard_all": ("Всё время", "all"),
     }
-    
+
     period_key = query.data
     if period_key not in period_map:
         return
-    
+
     period_name, period = period_map[period_key]
-    log_action("HISTORY_BUTTON", f"User {user.id} ({user.first_name}) viewed {period_name} history in chat {chat_id}")
-    
-    events = database.get_smoke_history(chat_id, period)
-    
-    if not events:
-        text = f"📜 <b>История за {period_name}:</b>\n\nПока ничего нет..."
+    log_action("LEADERBOARD_BUTTON", f"User {user.id} ({user.first_name}) viewed {period_name} leaderboard in chat {chat_id}")
+
+    leaders = database.get_smoke_leaderboard_for_period(chat_id, period)
+
+    if not leaders:
+        text = f"🏆 <b>Топ за {period_name}:</b>\n\nПока никто не отметился..."
     else:
-        lines = [f"📜 <b>История за {period_name}:</b>\n"]
-        for timestamp, name in events:
-            date_str = timestamp.split(" ")[0]
-            time_str = timestamp.split(" ")[1][:5]
-            lines.append(f"• {date_str} <b>{time_str}</b> - {name}")
-        
+        lines = [f"🏆 <b>Топ за {period_name}:</b>\n"]
+        for i, (name, count) in enumerate(leaders, start=1):
+            lines.append(f"{i}. {name}: <b>{count}</b>")
         text = "\n".join(lines)
-    
+
     keyboard = [
-        [InlineKeyboardButton("Сегодня", callback_data="history_today"),
-         InlineKeyboardButton("Неделя", callback_data="history_week")],
-        [InlineKeyboardButton("Месяц", callback_data="history_month"),
-         InlineKeyboardButton("Всё время", callback_data="history_all")]
+        [InlineKeyboardButton("Сегодня", callback_data="leaderboard_today"),
+         InlineKeyboardButton("Неделя", callback_data="leaderboard_week")],
+        [InlineKeyboardButton("Месяц", callback_data="leaderboard_month"),
+         InlineKeyboardButton("Всё время", callback_data="leaderboard_all")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, parse_mode='HTML', reply_markup=reply_markup)
+
+    await query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
 
 async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
@@ -523,13 +521,13 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("smoke", smoke))
     application.add_handler(CommandHandler("smoke_stats", smoke_stats))
-    application.add_handler(CommandHandler("smoke_history", smoke_history))
+    application.add_handler(CommandHandler("leaderboard", leaderboard))
     application.add_handler(CommandHandler("smoke_leave", smoke_leave))
     application.add_handler(CommandHandler("smoke_join", smoke_join))
     application.add_handler(CommandHandler("weather_info", weather_info))
     application.add_handler(CommandHandler("weather_subscribe", weather_subscribe))
     # Register more specific callback handlers first.
-    application.add_handler(CallbackQueryHandler(history_button_handler, pattern=r"^history_"))
+    application.add_handler(CallbackQueryHandler(leaderboard_button_handler, pattern=r"^leaderboard_"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern=r"^toggle_"))
 
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_mention))

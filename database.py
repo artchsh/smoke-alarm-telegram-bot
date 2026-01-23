@@ -274,33 +274,70 @@ def get_monthly_stats(chat_id, db_path=None):
     conn.close()
     return month_count, top_smoker, month_leaders
 
-def get_smoke_history(chat_id, period='week', db_path=None):
+def get_smoke_leaderboard_for_period(chat_id, period='week', limit=10, db_path=None):
+    """Leaderboard based on both /smoke calls and RSVP joins.
+
+    De-duplication rule:
+    - If the caller RSVPs for their own smoke message (auto-join), count it once.
+
+    Practical approach:
+    - RSVP joins are per (user_id, message_id).
+    - /smoke calls are per smoke_events row.
+    - We count unique user-event keys from the UNION of both sources.
+
+    This avoids duplication for the caller because callers are auto-joined; their
+    participation is already represented in `smoke_participation`.
+    """
     if db_path is None:
         db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    
+
     period_map = {
         'today': "date(timestamp) = date('now')",
         'week': "timestamp >= datetime('now', '-7 days')",
         'month': "timestamp >= datetime('now', '-30 days')",
         'all': "1=1"
     }
-    
     condition = period_map.get(period, period_map['week'])
-    
+
+    # We count unique user-event pairs.
+    # RSVP joins are keyed by (user_id, message_id).
+    # /smoke calls are not tied to message_id in the original schema, so we treat each
+    # call as its own event and union it with RSVPs by using a synthetic event key.
     cursor.execute(f"""
-        SELECT se.timestamp, p.mention_name 
-        FROM smoke_events se
-        JOIN participants p ON se.user_id = p.user_id
-        WHERE se.chat_id = ? AND {condition}
-        ORDER BY se.timestamp DESC
-        LIMIT 50
-    """, (chat_id,))
-    events = cursor.fetchall()
-    
+        WITH rsvp AS (
+            SELECT sp.user_id as user_id, 'm:' || sp.message_id as event_key
+            FROM smoke_participation sp
+            WHERE sp.chat_id = ? AND {condition.replace('timestamp', 'sp.timestamp')}
+        ),
+        calls AS (
+            SELECT se.user_id as user_id, 'c:' || se.id as event_key
+            FROM smoke_events se
+            WHERE se.chat_id = ? AND {condition.replace('timestamp', 'se.timestamp')} AND NOT EXISTS (
+                SELECT 1
+                FROM smoke_participation sp
+                WHERE sp.chat_id = se.chat_id
+                  AND sp.user_id = se.user_id
+                  AND date(sp.timestamp) = date(se.timestamp)
+            )
+        ),
+        unioned AS (
+            SELECT user_id, event_key FROM rsvp
+            UNION
+            SELECT user_id, event_key FROM calls
+        )
+        SELECT p.mention_name, count(*) as count
+        FROM unioned u
+        JOIN participants p ON u.user_id = p.user_id
+        GROUP BY u.user_id
+        ORDER BY count DESC
+        LIMIT ?
+    """, (chat_id, chat_id, limit))
+
+    leaders = cursor.fetchall()
     conn.close()
-    return events
+    return leaders
 
 def get_db_connection(db_path=None):
     if db_path is None:
