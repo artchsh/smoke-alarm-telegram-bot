@@ -209,7 +209,7 @@ async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not mentions:
         log_action("SMOKE_FAILED", f"No active users in chat {chat_id}")
-        await update.message.reply_text("2d39, 424342 3f4341423e! 1b38313e 424b 3e34383d, 3b38313e 324135 3b38323d433b38. 3dbeff")
+        await update.message.reply_text("Эй, тут пусто! Либо ты один, либо все ливнули. 🗿")
         return
 
     database.log_smoke_event(chat_id, caller_id)
@@ -224,7 +224,7 @@ async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Inline keyboards are shared for the whole chat. We must keep a single button
     # and change its label based on who clicked (per-user), not render one button
     # per participant.
-    keyboard = [[InlineKeyboardButton("2f 383443! 3dbeac", callback_data="toggle_0")]]
+    keyboard = [[InlineKeyboardButton("Я иду! 🚬", callback_data="toggle_0")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     sent_message = await update.message.reply_html(text, reply_markup=reply_markup)
@@ -237,7 +237,7 @@ async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_action("SMOKE_AUTO_JOIN", f"Caller {caller_id} ({caller_name}) automatically joined smoke event")
 
     updated_reply_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("2f 3f35403534433c303b... 3dbe22", callback_data=f"toggle_{actual_message_id}")]]
+        [[InlineKeyboardButton("Я передумал... 😢", callback_data=f"toggle_{actual_message_id}")]]
     )
     await sent_message.edit_reply_markup(reply_markup=updated_reply_markup)
 
@@ -293,7 +293,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     new_text = new_main + weather_part
 
-    button_text = "2f 3f35403534433c303b... 3dbe22" if joined else "2f 383443! 3dbeac"
+    button_text = "Я передумал... 😢" if joined else "Я иду! 🚬"
     reply_markup = InlineKeyboardMarkup(
         [[InlineKeyboardButton(button_text, callback_data=f"toggle_{message_id}")]]
     )
