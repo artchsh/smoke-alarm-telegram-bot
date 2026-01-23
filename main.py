@@ -528,8 +528,9 @@ def main():
     application.add_handler(CommandHandler("smoke_join", smoke_join))
     application.add_handler(CommandHandler("weather_info", weather_info))
     application.add_handler(CommandHandler("weather_subscribe", weather_subscribe))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(CallbackQueryHandler(history_button_handler, pattern="history_"))
+    # Register more specific callback handlers first.
+    application.add_handler(CallbackQueryHandler(history_button_handler, pattern=r"^history_"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern=r"^toggle_"))
 
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_mention))
     application.add_handler(MessageHandler(filters.ALL, capture_user), group=1)
