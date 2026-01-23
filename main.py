@@ -191,11 +191,11 @@ async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     caller_id = update.effective_user.id
     caller_name = update.effective_user.first_name
-    
+
     log_action("SMOKE_COMMAND", f"User {caller_id} ({caller_name}) called /smoke in chat {chat_id}")
-    
+
     await capture_user(update, context)
-    
+
     try:
         admins = await context.bot.get_chat_administrators(chat_id)
         for admin in admins:
@@ -205,12 +205,11 @@ async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Error fetching admins: {e}")
 
     users = database.get_active_users()
-    
     mentions = [name for uid, name in users if uid != caller_id]
-    
+
     if not mentions:
         log_action("SMOKE_FAILED", f"No active users in chat {chat_id}")
-        await update.message.reply_text("Эй, тут пусто! Либо ты один, либо все ливнули. 🗿")
+        await update.message.reply_text("2d39, 424342 3f4341423e! 1b38313e 424b 3e34383d, 3b38313e 324135 3b38323d433b38. 3dbeff")
         return
 
     database.log_smoke_event(chat_id, caller_id)
@@ -218,60 +217,53 @@ async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     mentions_str = " ".join(mentions)
     message_template = random.choice(SMOKE_MESSAGES)
-    
+
     weather_text = await get_weather_text()
-    
     text = message_template.format(mentions=mentions_str) + weather_text
-    
-    keyboard = [[InlineKeyboardButton("Я иду! 🚬", callback_data=f"join_{0}")]]
+
+    # Inline keyboards are shared for the whole chat. We must keep a single button
+    # and change its label based on who clicked (per-user), not render one button
+    # per participant.
+    keyboard = [[InlineKeyboardButton("2f 383443! 3dbeac", callback_data="toggle_0")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     sent_message = await update.message.reply_html(text, reply_markup=reply_markup)
     log_action("SMOKE_SENT", f"Smoke message sent in chat {chat_id}, message_id={sent_message.message_id}")
-    
+
     actual_message_id = sent_message.message_id
-    
-    conn = database.get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM smoke_participation WHERE chat_id = ? AND message_id = ?", (chat_id, actual_message_id))
-    participants = cursor.fetchall()
-    conn.close()
-    
-    buttons = []
-    for (pid,) in participants:
-        if pid == caller_id:
-            buttons.append([InlineKeyboardButton("Я передумал... 😢", callback_data=f"leave_{actual_message_id}")])
-        else:
-            buttons.append([InlineKeyboardButton("Я иду! 🚬", callback_data=f"join_{actual_message_id}")])
-    
-    reply_markup = InlineKeyboardMarkup(buttons) if buttons else InlineKeyboardMarkup([[InlineKeyboardButton("Я иду! 🚬", callback_data=f"join_{actual_message_id}")]])
-    await sent_message.edit_reply_markup(reply_markup=reply_markup)
-    
+
+    # Auto-join caller and then update the single button.
     database.toggle_smoke_participation(caller_id, chat_id, actual_message_id)
     log_action("SMOKE_AUTO_JOIN", f"Caller {caller_id} ({caller_name}) automatically joined smoke event")
+
+    updated_reply_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("2f 3f35403534433c303b... 3dbe22", callback_data=f"toggle_{actual_message_id}")]]
+    )
+    await sent_message.edit_reply_markup(reply_markup=updated_reply_markup)
+
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if not query.data.startswith("join_") and not query.data.startswith("leave_"):
+    if not query.data.startswith("toggle_"):
         return
 
     user = query.from_user
     chat_id = query.message.chat_id
     message_id = int(query.data.split("_")[1])
-    
+
     joined = database.toggle_smoke_participation(user.id, chat_id, message_id)
     status = "joined" if joined else "left"
     log_action("BUTTON_CLICK", f"User {user.id} ({user.first_name}) {status} smoke event in chat {chat_id}")
 
     user_line = f"- {user.mention_html()}"
-    
     current_text = query.message.text_html
-    
+
     weather_marker = "\n\n🌡 <b>Погода:</b>"
     header = "\n\n😎 <b>Крутышки, которые идут курить:</b>"
-    
+
+
     if weather_marker in current_text:
         parts = current_text.split(weather_marker)
         main_part = parts[0]
@@ -279,19 +271,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         main_part = current_text
         weather_part = ""
-        
+
     if header in main_part:
         subparts = main_part.split(header)
         intro = subparts[0]
         list_content = subparts[1]
-        
-        lines = [line.strip() for line in list_content.split('\n') if line.strip()]
-        
+
+        lines = [line.strip() for line in list_content.split("\n") if line.strip()]
+
         if user_line in lines:
             lines.remove(user_line)
         else:
             lines.append(user_line)
-            
+
         if not lines:
             new_main = intro
         else:
@@ -300,26 +292,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         new_main = main_part + header + "\n" + user_line
 
     new_text = new_main + weather_part
-    
-    conn = database.get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM smoke_participation WHERE chat_id = ? AND message_id = ?", (chat_id, message_id))
-    participants = cursor.fetchall()
-    conn.close()
-    
-    buttons = []
-    for (pid,) in participants:
-        if pid == user.id:
-            buttons.append([InlineKeyboardButton("Я передумал... 😢", callback_data=f"leave_{message_id}")])
-        else:
-            buttons.append([InlineKeyboardButton("Я иду! 🚬", callback_data=f"join_{message_id}")])
-    
-    reply_markup = InlineKeyboardMarkup(buttons) if buttons else InlineKeyboardMarkup([[InlineKeyboardButton("Я иду! 🚬", callback_data=f"join_{message_id}")]])
-    
+
+    button_text = "2f 3f35403534433c303b... 3dbe22" if joined else "2f 383443! 3dbeac"
+    reply_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(button_text, callback_data=f"toggle_{message_id}")]]
+    )
+
     if new_text != current_text:
-        await query.edit_message_text(new_text, parse_mode='HTML', reply_markup=reply_markup)
+        await query.edit_message_text(new_text, parse_mode="HTML", reply_markup=reply_markup)
     else:
         await query.edit_message_reply_markup(reply_markup=reply_markup)
+
 
 async def smoke_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -399,22 +382,14 @@ async def weather_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def send_daily_weather(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     log_action("DAILY_WEATHER", f"Sending daily weather to chat {chat_id}")
-    
+
     weather_text = await get_open_meteo_weather()
-    
+
     if weather_text:
         try:
-            active_users = database.get_active_users()
-            mentions = [name for uid, name in active_users]
-            
-            if mentions:
-                text = f"Доброе утро! ☕\n\n{weather_text}\n\nКто хочет на перекур? 🚬\n\n" + " ".join(mentions)
-            else:
-                text = f"Доброе утро! ☕\n\n{weather_text}\n\nКто хочет на перекур? 🚬"
-            
-            keyboard = [[InlineKeyboardButton("Я иду! 🚬", callback_data="daily_smoke")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await context.bot.send_message(chat_id, text, reply_markup=reply_markup)
+            # Daily message should be just the weather info.
+            text = weather_text
+            await context.bot.send_message(chat_id, text, parse_mode="HTML")
         except Exception as e:
             log_action("DAILY_WEATHER_ERROR", f"Failed to send weather to {chat_id}: {e}")
 
