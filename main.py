@@ -237,7 +237,7 @@ async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_action("SMOKE_AUTO_JOIN", f"Caller {caller_id} ({caller_name}) automatically joined smoke event")
 
     updated_reply_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Я передумал... 😢", callback_data=f"toggle_{actual_message_id}")]]
+        [[InlineKeyboardButton("Я иду! 🚬", callback_data=f"toggle_{actual_message_id}")]]
     )
     await sent_message.edit_reply_markup(reply_markup=updated_reply_markup)
 
@@ -293,9 +293,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     new_text = new_main + weather_part
 
-    button_text = "Я передумал... 😢" if joined else "Я иду! 🚬"
     reply_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(button_text, callback_data=f"toggle_{message_id}")]]
+        [[InlineKeyboardButton("Я иду! 🚬", callback_data=f"toggle_{message_id}")]]
     )
 
     if new_text != current_text:
